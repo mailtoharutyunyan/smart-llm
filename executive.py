@@ -3,6 +3,7 @@ Component 0A: Executive Controller
 Routes queries to cognitive modes based on complexity analysis.
 5 modes: INSTANT, STANDARD, DEEP, CLARIFY, DEFER.
 """
+
 import logging
 
 logger = logging.getLogger("acs.executive")
@@ -14,20 +15,37 @@ class ExecutiveController:
     MODES = ["INSTANT", "STANDARD", "DEEP", "CLARIFY", "DEFER"]
 
     COMPLEXITY_WORDS = [
-        "why", "how", "compare", "evaluate", "design",
-        "explain", "analyze", "what if", "trade-off",
-        "implications", "relationship", "differences",
+        "why",
+        "how",
+        "compare",
+        "evaluate",
+        "design",
+        "explain",
+        "analyze",
+        "what if",
+        "trade-off",
+        "implications",
+        "relationship",
+        "differences",
     ]
     DEEP_WORDS = [
-        "deeply", "thoroughly", "comprehensive", "detail",
-        "philosophical", "fundamental", "underlying",
+        "deeply",
+        "thoroughly",
+        "comprehensive",
+        "detail",
+        "philosophical",
+        "fundamental",
+        "underlying",
     ]
 
     def __init__(self, policy_layer):
         self.policy = policy_layer
         self.stats = {
-            "INSTANT": 0, "STANDARD": 0, "DEEP": 0,
-            "CLARIFY": 0, "DEFER": 0,
+            "INSTANT": 0,
+            "STANDARD": 0,
+            "DEEP": 0,
+            "CLARIFY": 0,
+            "DEFER": 0,
         }
 
     def route_query(self, query: str) -> str:
@@ -35,12 +53,8 @@ class ExecutiveController:
         words = len(query.split())
         q_lower = query.lower()
 
-        has_complexity = any(
-            w in q_lower for w in self.COMPLEXITY_WORDS
-        )
-        wants_depth = any(
-            w in q_lower for w in self.DEEP_WORDS
-        )
+        has_complexity = any(w in q_lower for w in self.COMPLEXITY_WORDS)
+        wants_depth = any(w in q_lower for w in self.DEEP_WORDS)
 
         if self.policy.should_defer(query):
             return "DEFER"
@@ -74,15 +88,9 @@ class ExecutiveController:
         }
 
         if mode == "DEFER":
-            trace["result"] = (
-                "Query deferred — out of domain or "
-                "confidence too low."
-            )
+            trace["result"] = "Query deferred — out of domain or confidence too low."
         elif mode == "CLARIFY":
-            trace["result"] = (
-                "Could you elaborate? I want to give "
-                "you a thorough answer."
-            )
+            trace["result"] = "Could you elaborate? I want to give you a thorough answer."
         elif mode == "INSTANT":
             trace["result"] = acs_core.quick_generate(query)
         else:
@@ -98,8 +106,5 @@ class ExecutiveController:
         return {
             "total_queries": total,
             "by_mode": dict(self.stats),
-            "distribution": {
-                k: round(v / total, 3) if total > 0 else 0
-                for k, v in self.stats.items()
-            },
+            "distribution": {k: round(v / total, 3) if total > 0 else 0 for k, v in self.stats.items()},
         }

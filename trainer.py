@@ -3,13 +3,12 @@ Component 18a: Trainer — MLX LoRA Fine-tuning Controller.
 Invokes mlx_lm for actual training on Apple Silicon.
 Includes early stopping on validation loss.
 """
+
+import datetime
 import json
+import logging
 import os
 import subprocess
-import logging
-import datetime
-import random
-from typing import Optional
 
 logger = logging.getLogger("acs.trainer")
 
@@ -44,25 +43,17 @@ class Trainer:
         os.makedirs(self.adapters_dir, exist_ok=True)
         os.makedirs(self.logs_dir, exist_ok=True)
 
-    def _prepare_training_data(
-        self, dataset_version: str, rank: int
-    ) -> tuple[str, str]:
+    def _prepare_training_data(self, dataset_version: str, rank: int) -> tuple[str, str]:
         """Load separate train and validation sets from dataset builder."""
-        train_source = os.path.join(
-            self.datasets_dir, dataset_version, "train_dataset.jsonl"
-        )
-        eval_source = os.path.join(
-            self.datasets_dir, dataset_version, "eval_dataset.jsonl"
-        )
+        train_source = os.path.join(self.datasets_dir, dataset_version, "train_dataset.jsonl")
+        eval_source = os.path.join(self.datasets_dir, dataset_version, "eval_dataset.jsonl")
         if not os.path.exists(train_source) or not os.path.exists(eval_source):
-            raise FileNotFoundError(
-                f"Datasets not found in {dataset_version}"
-            )
+            raise FileNotFoundError(f"Datasets not found in {dataset_version}")
 
-        with open(train_source, "r") as f:
+        with open(train_source) as f:
             train_data = [json.loads(line) for line in f]
-            
-        with open(eval_source, "r") as f:
+
+        with open(eval_source) as f:
             val_data = [json.loads(line) for line in f]
 
         # Convert to chat format for mlx_lm
@@ -75,9 +66,7 @@ class Trainer:
         train_file = os.path.join(run_dir, "train.jsonl")
         val_file = os.path.join(run_dir, "valid.jsonl")
 
-        for data, filepath in [
-            (train_data, train_file), (val_data, val_file)
-        ]:
+        for data, filepath in [(train_data, train_file), (val_data, val_file)]:
             with open(filepath, "w") as f:
                 for item in data:
                     reasoning = item.get("reasoning_trace", {})
@@ -127,36 +116,45 @@ class Trainer:
         new_version = self.registry.register_new_model()
         iterations = len(self.registry.versions)
         rank = 16 if iterations == 1 else 8
-        
-        run_dir, train_file = self._prepare_training_data(
-            dataset_version, rank
-        )
+
+        run_dir, train_file = self._prepare_training_data(dataset_version, rank)
         adapter_dir = os.path.join(self.adapters_dir, new_version)
         os.makedirs(adapter_dir, exist_ok=True)
 
         # Calculate precise iteration bounds
         try:
-            with open(os.path.join(run_dir, "config.json"), "r") as f:
+            with open(os.path.join(run_dir, "config.json")) as f:
                 cfg = json.load(f)
                 train_count = cfg.get("train_size", 1000)
         except Exception:
             train_count = 1000
-            
+
         calculated_iters = max(100, (train_count // LORA_CONFIG["batch_size"]) * LORA_CONFIG["epochs"])
 
         # Build mlx_lm command
         cmd = [
-            "python3", "-m", "mlx_lm.lora",
-            "--model", base_model,
+            "python3",
+            "-m",
+            "mlx_lm.lora",
+            "--model",
+            base_model,
             "--train",
-            "--data", run_dir,
-            "--adapter-path", adapter_dir,
-            "--iters", str(calculated_iters),
-            "--batch-size", str(LORA_CONFIG["batch_size"]),
-            "--learning-rate", str(LORA_CONFIG["learning_rate"]),
-            "--lora-layers", str(rank),
-            "--val-batches", "20",  # Enable early stopping patience bounds
-            "--seed", "42",
+            "--data",
+            run_dir,
+            "--adapter-path",
+            adapter_dir,
+            "--iters",
+            str(calculated_iters),
+            "--batch-size",
+            str(LORA_CONFIG["batch_size"]),
+            "--learning-rate",
+            str(LORA_CONFIG["learning_rate"]),
+            "--lora-layers",
+            str(rank),
+            "--val-batches",
+            "20",  # Enable early stopping patience bounds
+            "--seed",
+            "42",
         ]
 
         logger.info("Starting training: %s", " ".join(cmd))
@@ -199,10 +197,7 @@ class Trainer:
             logger.error("Training timed out after 12 hours")
         except FileNotFoundError:
             result["status"] = "mlx_not_installed"
-            result["error"] = (
-                "mlx_lm not found. Install with: "
-                "pip install mlx-lm"
-            )
+            result["error"] = "mlx_lm not found. Install with: pip install mlx-lm"
             logger.error("mlx_lm not installed")
 
         # Save run result
@@ -212,13 +207,9 @@ class Trainer:
 
         return result
 
-    def dry_run(
-        self, dataset_version: Optional[str] = None
-    ) -> dict:
+    def dry_run(self, dataset_version: str | None = None) -> dict:
         """Show what training would do without executing."""
-        versions = os.listdir(self.datasets_dir) if os.path.exists(
-            self.datasets_dir
-        ) else []
+        versions = os.listdir(self.datasets_dir) if os.path.exists(self.datasets_dir) else []
 
         if dataset_version:
             target = dataset_version
@@ -227,18 +218,16 @@ class Trainer:
         else:
             return {"error": "No datasets available"}
 
-        train_source = os.path.join(
-            self.datasets_dir, target, "train_dataset.jsonl"
-        )
+        train_source = os.path.join(self.datasets_dir, target, "train_dataset.jsonl")
         count = 0
         if os.path.exists(train_source):
-            with open(train_source, "r") as f:
+            with open(train_source) as f:
                 count = sum(1 for _ in f)
 
         return {
             "dataset_version": target,
             "trace_count": count,
-            "config": {**LORA_CONFIG, "rank": 16 if len(self.registry.versions)==0 else 8},
+            "config": {**LORA_CONFIG, "rank": 16 if len(self.registry.versions) == 0 else 8},
             "estimated_time": f"~{count * 3 // 60} minutes",
             "next_model_version": f"v{len(self.registry.versions) + 1}",
             "status": "dry_run — no training executed",

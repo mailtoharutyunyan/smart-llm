@@ -6,8 +6,8 @@ Thank you for considering contributing to the Autonomous Cognitive System. This 
 
 ```bash
 # Clone and set up
-git clone git@github.com:mailtoharutyunyan/autonomous-cognitive-system.git
-cd autonomous-cognitive-system
+git clone git@github.com:mailtoharutyunyan/smart-llm.git
+cd smart-llm
 python3 -m venv venv
 source venv/bin/activate
 pip install -e ".[dev]"

@@ -3,11 +3,11 @@ Component 17: Evaluation Suite
 Tier 1 (deterministic), Tier 2 (reasoning quality),
 Tier 3 (regression guard), Plateau detection.
 """
-import json
-import os
-import logging
+
 import datetime
-from typing import Optional
+import json
+import logging
+import os
 
 logger = logging.getLogger("acs.evaluation_suite")
 
@@ -27,18 +27,15 @@ TIER1_MATH = [
 
 TIER1_LOGIC = [
     {
-        "q": "All cats are animals. Some animals are pets. "
-             "Can we conclude all cats are pets?",
+        "q": "All cats are animals. Some animals are pets. Can we conclude all cats are pets?",
         "a": "no",
     },
     {
-        "q": "If it rains, the ground is wet. The ground is wet. "
-             "Did it rain?",
+        "q": "If it rains, the ground is wet. The ground is wet. Did it rain?",
         "a": "not necessarily",
     },
     {
-        "q": "A is taller than B. B is taller than C. "
-             "Is A taller than C?",
+        "q": "A is taller than B. B is taller than C. Is A taller than C?",
         "a": "yes",
     },
 ]
@@ -47,7 +44,7 @@ TIER1_LOGIC = [
 TIER2_QUESTIONS = [
     "Why do economic recessions tend to be cyclical?",
     "Compare the philosophical implications of determinism vs free will.",
-        "How does natural selection lead to speciation?",
+    "How does natural selection lead to speciation?",
     "What would happen if the speed of light were halved?",
     "Why do democracies sometimes elect authoritarian leaders?",
     "Explain the relationship between entropy and information theory.",
@@ -69,9 +66,7 @@ class EvaluationSuite:
         self.core = core_acs
         self.history_dir = history_dir
         os.makedirs(self.history_dir, exist_ok=True)
-        self.history_file = os.path.join(
-            self.history_dir, "eval_history.jsonl"
-        )
+        self.history_file = os.path.join(self.history_dir, "eval_history.jsonl")
 
     def _normalize_answer(self, text: str) -> str:
         """Extract core answer for comparison."""
@@ -79,7 +74,7 @@ class EvaluationSuite:
         # Strip common wrappers
         for prefix in ["the answer is ", "answer: ", "result: "]:
             if text.startswith(prefix):
-                text = text[len(prefix):]
+                text = text[len(prefix) :]
         return text.strip().rstrip(".")
 
     # ── TIER 1: Deterministic ───────────────────────────────
@@ -91,50 +86,50 @@ class EvaluationSuite:
 
         for item in TIER1_MATH:
             try:
-                raw_out = self.core.quick_generate(
-                    f"Answer concisely with just the number: {item['q']}"
-                )
+                raw_out = self.core.quick_generate(f"Answer concisely with just the number: {item['q']}")
                 answer = self._normalize_answer(raw_out)
                 correct = item["a"].lower() in answer
-                results["math"].append({
-                    "question": item["q"],
-                    "expected": item["a"],
-                    "got": answer,
-                    "correct": correct,
-                })
+                results["math"].append(
+                    {
+                        "question": item["q"],
+                        "expected": item["a"],
+                        "got": answer,
+                        "correct": correct,
+                    }
+                )
             except Exception as e:
-                results["math"].append({
-                    "question": item["q"],
-                    "error": str(e),
-                    "correct": False,
-                })
+                results["math"].append(
+                    {
+                        "question": item["q"],
+                        "error": str(e),
+                        "correct": False,
+                    }
+                )
 
         for item in TIER1_LOGIC:
             try:
-                raw_out = self.core.quick_generate(
-                    f"Answer yes, no, or not necessarily: {item['q']}"
-                )
+                raw_out = self.core.quick_generate(f"Answer yes, no, or not necessarily: {item['q']}")
                 answer = self._normalize_answer(raw_out)
                 correct = item["a"].lower() in answer
-                results["logic"].append({
-                    "question": item["q"],
-                    "expected": item["a"],
-                    "got": answer,
-                    "correct": correct,
-                })
+                results["logic"].append(
+                    {
+                        "question": item["q"],
+                        "expected": item["a"],
+                        "got": answer,
+                        "correct": correct,
+                    }
+                )
             except Exception as e:
-                results["logic"].append({
-                    "question": item["q"],
-                    "error": str(e),
-                    "correct": False,
-                })
+                results["logic"].append(
+                    {
+                        "question": item["q"],
+                        "error": str(e),
+                        "correct": False,
+                    }
+                )
 
-        math_correct = sum(
-            1 for r in results["math"] if r.get("correct")
-        )
-        logic_correct = sum(
-            1 for r in results["logic"] if r.get("correct")
-        )
+        math_correct = sum(1 for r in results["math"] if r.get("correct"))
+        logic_correct = sum(1 for r in results["logic"] if r.get("correct"))
         total = len(results["math"]) + len(results["logic"])
         correct = math_correct + logic_correct
         score = correct / total if total > 0 else 0.0
@@ -142,8 +137,7 @@ class EvaluationSuite:
         results["score"] = round(score, 4)
         results["correct"] = correct
         results["total"] = total
-        logger.info("Tier 1: %d/%d correct (%.2f%%)",
-                    correct, total, score * 100)
+        logger.info("Tier 1: %d/%d correct (%.2f%%)", correct, total, score * 100)
         return results
 
     # ── TIER 2: Reasoning Quality ───────────────────────────
@@ -159,34 +153,37 @@ class EvaluationSuite:
                 trace = self.core.think(question, "DEEP")
                 # Evaluate it independently
                 eval_scores = self.core.evaluate_trace(trace)
-                avg = sum(
-                    eval_scores.get(k, 0)
-                    for k in [
-                        "decomposition_quality",
-                        "plan_coherence",
-                        "step_validity",
-                        "self_awareness",
-                        "conclusion_support",
-                        "confidence_calibration",
-                    ]
-                ) / 6
-                scores_list.append({
-                    "question": question,
-                    "scores": eval_scores,
-                    "average": round(avg, 4),
-                })
+                avg = (
+                    sum(
+                        eval_scores.get(k, 0)
+                        for k in [
+                            "decomposition_quality",
+                            "plan_coherence",
+                            "step_validity",
+                            "self_awareness",
+                            "conclusion_support",
+                            "confidence_calibration",
+                        ]
+                    )
+                    / 6
+                )
+                scores_list.append(
+                    {
+                        "question": question,
+                        "scores": eval_scores,
+                        "average": round(avg, 4),
+                    }
+                )
             except Exception as e:
-                scores_list.append({
-                    "question": question,
-                    "error": str(e),
-                    "average": 0.0,
-                })
+                scores_list.append(
+                    {
+                        "question": question,
+                        "error": str(e),
+                        "average": 0.0,
+                    }
+                )
 
-        overall = (
-            sum(s["average"] for s in scores_list) / len(scores_list)
-            if scores_list
-            else 0.0
-        )
+        overall = sum(s["average"] for s in scores_list) / len(scores_list) if scores_list else 0.0
 
         result = {
             "score": round(overall, 4),
@@ -247,7 +244,7 @@ class EvaluationSuite:
         """Check if last two runs show < 2% Tier 2 gain."""
         history = []
         if os.path.exists(self.history_file):
-            with open(self.history_file, "r") as f:
+            with open(self.history_file) as f:
                 for line in f:
                     try:
                         history.append(json.loads(line))
@@ -258,18 +255,11 @@ class EvaluationSuite:
             return {
                 "plateau": False,
                 "reason": f"Not enough history ({len(history)} runs, need 3)",
-                "history": [
-                    {"version": h.get("model_version"),
-                     "tier2": h.get("tier2")}
-                    for h in history
-                ],
+                "history": [{"version": h.get("model_version"), "tier2": h.get("tier2")} for h in history],
             }
 
         recent = history[-3:]
-        deltas = [
-            recent[i + 1]["tier2"] - recent[i]["tier2"]
-            for i in range(len(recent) - 1)
-        ]
+        deltas = [recent[i + 1]["tier2"] - recent[i]["tier2"] for i in range(len(recent) - 1)]
 
         is_plateau = all(d < 0.02 for d in deltas)
 
@@ -277,14 +267,9 @@ class EvaluationSuite:
             "plateau": is_plateau,
             "recent_deltas": [round(d, 4) for d in deltas],
             "recommendation": (
-                "PLATEAU DETECTED — Consider transition to Phase B "
-                "(knowledge injection)"
+                "PLATEAU DETECTED — Consider transition to Phase B (knowledge injection)"
                 if is_plateau
                 else "Continue Phase A"
             ),
-            "history": [
-                {"version": h.get("model_version"),
-                 "tier2": h.get("tier2")}
-                for h in history
-            ],
+            "history": [{"version": h.get("model_version"), "tier2": h.get("tier2")} for h in history],
         }

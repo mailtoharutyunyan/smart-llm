@@ -3,10 +3,11 @@ Component 0B: Policy Adaptation Layer
 Daily threshold updates. Learns when to reason deeply.
 Persists state to JSON.
 """
-import os
+
+import datetime
 import json
 import logging
-import datetime
+import os
 
 logger = logging.getLogger("acs.policy")
 
@@ -24,31 +25,27 @@ class PolicyLayer:
         self.deep_think_threshold = 0.5
         self.confidence_floor = 0.4
         self.defer_domains: list[str] = [
-            "medical diagnosis", "legal binding advice", "financial investment",
-            "self harm", "illegal", "extremism"
+            "medical diagnosis",
+            "legal binding advice",
+            "financial investment",
+            "self harm",
+            "illegal",
+            "extremism",
         ]
         self._load_policy()
 
     def _load_policy(self):
         """Load persisted policy state."""
         if os.path.exists(self.config_path):
-            with open(self.config_path, "r") as f:
+            with open(self.config_path) as f:
                 data = json.load(f)
-                self.deep_think_threshold = data.get(
-                    "deep_think_threshold", 0.5
-                )
-                self.confidence_floor = data.get(
-                    "confidence_floor", 0.4
-                )
-                self.defer_domains = data.get(
-                    "defer_domains", []
-                )
+                self.deep_think_threshold = data.get("deep_think_threshold", 0.5)
+                self.confidence_floor = data.get("confidence_floor", 0.4)
+                self.defer_domains = data.get("defer_domains", [])
 
     def save_policy(self):
         """Persist policy state to disk."""
-        os.makedirs(
-            os.path.dirname(self.config_path), exist_ok=True
-        )
+        os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
         with open(self.config_path, "w") as f:
             json.dump(
                 {
@@ -64,14 +61,12 @@ class PolicyLayer:
     def should_defer(self, query: str) -> bool:
         """Check if query should be deferred."""
         q_lower = query.lower()
-        for domain in self.defer_domains:
-            if domain in q_lower:
-                return True
-        return False
+        return any(domain in q_lower for domain in self.defer_domains)
 
     def should_deep_think(self) -> bool:
         """Policy-driven decision on deep vs standard thinking."""
         import random
+
         return random.random() > self.deep_think_threshold
 
     def record_outcome(
@@ -87,9 +82,7 @@ class PolicyLayer:
         except ValueError:
             confidence = 0.0
 
-        os.makedirs(
-            os.path.dirname(self.outcomes_path), exist_ok=True
-        )
+        os.makedirs(os.path.dirname(self.outcomes_path), exist_ok=True)
         entry = {
             "timestamp": datetime.datetime.now().isoformat(),
             "query": query[:100],
@@ -107,7 +100,7 @@ class PolicyLayer:
             return
 
         recent = []
-        with open(self.outcomes_path, "r") as f:
+        with open(self.outcomes_path) as f:
             for line in f:
                 try:
                     recent.append(json.loads(line))
@@ -119,20 +112,13 @@ class PolicyLayer:
         if not recent:
             return
 
-        success_rate = (
-            sum(1 for o in recent if o.get("success"))
-            / len(recent)
-        )
+        success_rate = sum(1 for o in recent if o.get("success")) / len(recent)
 
         # Adapt: if doing well, allow more STANDARD over DEEP
         if success_rate > 0.8:
-            self.deep_think_threshold = min(
-                0.9, self.deep_think_threshold + 0.05
-            )
+            self.deep_think_threshold = min(0.9, self.deep_think_threshold + 0.05)
         elif success_rate < 0.5:
-            self.deep_think_threshold = max(
-                0.2, self.deep_think_threshold - 0.05
-            )
+            self.deep_think_threshold = max(0.2, self.deep_think_threshold - 0.05)
 
         self.save_policy()
         logger.info(

@@ -15,22 +15,23 @@ Usage:
   python evolve.py --auto-reject      # Skip human confirmation on reject
   python evolve.py --skip-filter      # Skip filtering (use existing accepted traces)
 """
+
+import datetime
 import json
+import logging
 import os
 import sys
-import logging
-import datetime
 
-from world_model import WorldModel
-from policy import PolicyLayer
-from executive import ExecutiveController
 from core_acs import CoreACS
-from trace_collector import TraceCollector
-from quality_filter import QualityFilter
 from dataset_builder import DatasetBuilder
-from trainer import Trainer
-from model_registry import ModelRegistry
 from evaluation_suite import EvaluationSuite
+from executive import ExecutiveController
+from model_registry import ModelRegistry
+from policy import PolicyLayer
+from quality_filter import QualityFilter
+from trace_collector import TraceCollector
+from trainer import Trainer
+from world_model import WorldModel
 
 logging.basicConfig(
     level=logging.INFO,
@@ -100,7 +101,7 @@ def run_evolution(
 ):
     """Execute the full evolution loop."""
     start_time = datetime.datetime.now()
-    
+
     hr()
     print("  ACS V3.1 — AUTOMATED EVOLUTION ORCHESTRATOR")
     print(f"  Started: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -121,7 +122,7 @@ def run_evolution(
 
         already_filtered = set()
         if os.path.exists(filtered_file):
-            with open(filtered_file, "r") as f:
+            with open(filtered_file) as f:
                 for line in f:
                     try:
                         t = json.loads(line)
@@ -129,10 +130,7 @@ def run_evolution(
                     except json.JSONDecodeError:
                         continue
 
-        new_traces = [
-            t for t in raw_traces
-            if t.get("trace_id") not in already_filtered
-        ]
+        new_traces = [t for t in raw_traces if t.get("trace_id") not in already_filtered]
 
         if not new_traces:
             print("  No new traces to filter.")
@@ -147,7 +145,7 @@ def run_evolution(
 
             rate = stack["quality_filter"].acceptance_rate()
             print(f"  Results: {accepted} accepted, {rejected} rejected")
-            print(f"  Acceptance rate: {rate['rate']*100:.1f}% ({rate['status']})")
+            print(f"  Acceptance rate: {rate['rate'] * 100:.1f}% ({rate['status']})")
 
             if rate["status"] == "ALERT_TOO_LENIENT":
                 print("\n  ⚠️  WARNING: Acceptance rate > 40%. Evaluator may be too lenient.")
@@ -161,7 +159,7 @@ def run_evolution(
     filtered_file = "./acs/training/filtered_traces/accepted.jsonl"
     total_accepted = 0
     if os.path.exists(filtered_file):
-        with open(filtered_file, "r") as f:
+        with open(filtered_file) as f:
             total_accepted = sum(1 for _ in f)
 
     print(f"\n  Total accepted traces available: {total_accepted}")
@@ -177,7 +175,7 @@ def run_evolution(
 
     traces = []
     if os.path.exists(filtered_file):
-        with open(filtered_file, "r") as f:
+        with open(filtered_file) as f:
             for line in f:
                 try:
                     traces.append(json.loads(line))
@@ -191,8 +189,8 @@ def run_evolution(
     report = stack["dataset_builder"].validate(train_ds)
     print(f"\n  Validation: {'✅ PASSED' if report['valid'] else '❌ FAILED'}")
     print(f"  Domain balance OK: {report.get('domain_ok')}")
-    print(f"  Error correction: {report.get('error_correction_pct', 0)*100:.1f}%")
-    print(f"  Shuffled traces: {report.get('shuffled_pct', 0)*100:.1f}%")
+    print(f"  Error correction: {report.get('error_correction_pct', 0) * 100:.1f}%")
+    print(f"  Shuffled traces: {report.get('shuffled_pct', 0) * 100:.1f}%")
     print(f"  Style collapse OK: {report.get('style_ok')}")
 
     if not report["valid"]:
@@ -252,10 +250,7 @@ def run_evolution(
         print(f"\n  ❌ Training failed: {train_result['status']}")
         if train_result.get("error"):
             print(f"  Error: {train_result['error']}")
-        stack["registry"].reject(
-            train_result["version"],
-            f"training_{train_result['status']}"
-        )
+        stack["registry"].reject(train_result["version"], f"training_{train_result['status']}")
         return
 
     new_version = train_result["version"]
@@ -273,9 +268,7 @@ def run_evolution(
     print(f"  Tier 2 (reasoning):     {post_tier2:.4f}")
 
     # Regression check
-    regression = stack["evaluator"].run_tier3_regression(
-        post_tier1, post_tier2, pre_tier1, pre_tier2
-    )
+    regression = stack["evaluator"].run_tier3_regression(post_tier1, post_tier2, pre_tier1, pre_tier2)
 
     print(f"\n  Tier 1 delta: {regression['tier1_delta']:+.4f} ({'✅' if regression['tier1_ok'] else '❌'})")
     print(f"  Tier 2 delta: {regression['tier2_delta']:+.4f} ({'✅' if regression['tier2_ok'] else '❌'})")
@@ -284,8 +277,8 @@ def run_evolution(
     step_header(6, "DECISION")
 
     if regression["passed"]:
-        print(f"  ✅ All regression guards passed.")
-        print(f"  Tier 2 improvement: {regression['tier2_delta']*100:.2f}%")
+        print("  ✅ All regression guards passed.")
+        print(f"  Tier 2 improvement: {regression['tier2_delta'] * 100:.2f}%")
 
         if confirm(f"Promote {new_version} to production?"):
             stack["registry"].promote(new_version, post_tier1, post_tier2)
@@ -294,15 +287,14 @@ def run_evolution(
             stack["registry"].reject(new_version, "human_declined_promotion")
             print(f"\n  {new_version} rejected by operator.")
     else:
-        print(f"  ❌ REGRESSION DETECTED")
+        print("  ❌ REGRESSION DETECTED")
         if not regression["tier1_ok"]:
-            print(f"     Tier 1 dropped by {abs(regression['tier1_delta'])*100:.2f}% (max allowed: 2%)")
+            print(f"     Tier 1 dropped by {abs(regression['tier1_delta']) * 100:.2f}% (max allowed: 2%)")
         if not regression["tier2_ok"]:
-            print(f"     Tier 2 did not improve by >= 2%")
+            print("     Tier 2 did not improve by >= 2%")
 
         stack["registry"].reject(
-            new_version,
-            f"regression: T1={regression['tier1_delta']:+.4f}, T2={regression['tier2_delta']:+.4f}"
+            new_version, f"regression: T1={regression['tier1_delta']:+.4f}, T2={regression['tier2_delta']:+.4f}"
         )
         print(f"\n  {new_version} automatically rejected.")
 
@@ -320,19 +312,24 @@ def run_evolution(
     elapsed = datetime.datetime.now() - start_time
     hr()
     print(f"  Evolution loop completed in {elapsed}")
-    print(f"  Model registry: python acs.py model --list")
+    print("  Model registry: python acs.py model --list")
     hr()
 
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser(description="ACS Automated Evolution Orchestrator")
-    parser.add_argument("--dry-run", action="store_true", dest="dry_run",
-                        help="Show plan without executing training")
-    parser.add_argument("--auto-reject", action="store_true", dest="auto_reject",
-                        help="Skip human confirmation on rejection")
-    parser.add_argument("--skip-filter", action="store_true", dest="skip_filter",
-                        help="Skip filtering step, use existing accepted traces")
+    parser.add_argument("--dry-run", action="store_true", dest="dry_run", help="Show plan without executing training")
+    parser.add_argument(
+        "--auto-reject", action="store_true", dest="auto_reject", help="Skip human confirmation on rejection"
+    )
+    parser.add_argument(
+        "--skip-filter",
+        action="store_true",
+        dest="skip_filter",
+        help="Skip filtering step, use existing accepted traces",
+    )
     args = parser.parse_args()
 
     run_evolution(

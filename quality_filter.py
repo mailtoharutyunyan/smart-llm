@@ -3,14 +3,14 @@ Component 15: Quality Filter — The spine of the system.
 Prevents self-approval bias. Four independent checks.
 Acceptance rate 15-30% is healthy.
 """
+
+import datetime
 import json
+import logging
 import os
 import re
 import subprocess
 import tempfile
-import logging
-import datetime
-from typing import Optional
 from difflib import SequenceMatcher
 
 logger = logging.getLogger("acs.quality_filter")
@@ -39,30 +39,23 @@ class QualityFilter:
         self.filtered_dir = filtered_dir
         os.makedirs(self.log_dir, exist_ok=True)
         os.makedirs(self.filtered_dir, exist_ok=True)
-        self.decisions_log = os.path.join(
-            self.log_dir, "decisions.jsonl"
-        )
-        self.evaluator_log = os.path.join(
-            self.log_dir, "evaluator_scores.jsonl"
-        )
+        self.decisions_log = os.path.join(self.log_dir, "decisions.jsonl")
+        self.evaluator_log = os.path.join(self.log_dir, "evaluator_scores.jsonl")
         self._accepted_traces: list[dict] = []
         self._load_accepted()
 
     def _load_accepted(self):
         """Load previously accepted traces for dedup comparison."""
-        filtered_file = os.path.join(
-            self.filtered_dir, "accepted.jsonl"
-        )
+        filtered_file = os.path.join(self.filtered_dir, "accepted.jsonl")
         if os.path.exists(filtered_file):
-            with open(filtered_file, "r") as f:
+            with open(filtered_file) as f:
                 for line in f:
                     try:
                         self._accepted_traces.append(json.loads(line))
                     except json.JSONDecodeError:
                         continue
 
-    def _log_decision(self, trace_id: str, passed: bool,
-                      details: dict):
+    def _log_decision(self, trace_id: str, passed: bool, details: dict):
         """Append filter decision to log."""
         entry = {
             "timestamp": datetime.datetime.now().isoformat(),
@@ -85,7 +78,7 @@ class QualityFilter:
 
     # ── CHECK 1: External Ground Truth ──────────────────────
 
-    def check_ground_truth(self, trace: dict) -> Optional[bool]:
+    def check_ground_truth(self, trace: dict) -> bool | None:
         """Deterministic verification where possible."""
         domain = trace.get("domain", "")
         reasoning = trace.get("reasoning_trace", {})
@@ -100,27 +93,25 @@ class QualityFilter:
             # Abstract domains: no ground truth available
             return None
 
-    def _verify_math(self, answer: str, expected: Optional[str] = None) -> bool:
+    def _verify_math(self, answer: str, expected: str | None = None) -> bool:
         """Extract numeric/symbolic answer and strictly verify its bounds."""
         try:
             # Extract numbers from the answer
-            numbers = re.findall(r'-?\d+\.?\d*', answer)
+            numbers = re.findall(r"-?\d+\.?\d*", answer)
             if not numbers:
                 return True  # No verifiable numeric claim
-                
+
             import sympy
-            
+
             # If explicit ground-truth exists, strictly evaluate numeric equivalency
             if expected:
                 try:
                     expected_val = sympy.sympify(expected)
                     # Prove at least one numeric extraction matches the answer mathematically
-                    if any(sympy.sympify(num_str).equals(expected_val) for num_str in numbers[:3]):
-                        return True
-                    return False
+                    return bool(any(sympy.sympify(num_str).equals(expected_val) for num_str in numbers[:3]))
                 except Exception:
                     pass  # Fallthrough to basic syntax parsing if parsing GT fails
-                    
+
             # Basic sanity: try to parse with sympy (fallback)
             for num_str in numbers[:3]:
                 sympy.sympify(num_str)
@@ -130,17 +121,13 @@ class QualityFilter:
 
     def _verify_code(self, answer: str) -> bool:
         """Extract code blocks and attempt to run them safely."""
-        code_match = re.findall(
-            r'```(?:python)?\s*\n(.*?)```', answer, re.DOTALL
-        )
+        code_match = re.findall(r"```(?:python)?\s*\n(.*?)```", answer, re.DOTALL)
         if not code_match:
             return True  # No code to verify
 
         for code in code_match[:2]:
             try:
-                with tempfile.NamedTemporaryFile(
-                    suffix=".py", mode="w", delete=False
-                ) as f:
+                with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
                     f.write(code)
                     f.flush()
                     result = subprocess.run(
@@ -163,38 +150,35 @@ class QualityFilter:
         try:
             scores = self.core.evaluate_trace(trace)
             self._log_evaluator(trace.get("trace_id", ""), scores)
-            
+
             # Extract expected keys to form an average. Scale appropriately.
-            avg_score = sum(
-                scores.get(metric, 0)
-                for metric in self.THRESHOLDS.keys()
-            ) / max(1, len(self.THRESHOLDS))
-            
+            avg_score = sum(scores.get(metric, 0) for metric in self.THRESHOLDS) / max(1, len(self.THRESHOLDS))
+
             # Online Normalization tracking (rolling mean/std) to handle evaluator drift
             eval_model = getattr(self.core, "evaluator_model", "base").lower().replace("/", "_")
             log_file = os.path.join(self.log_dir, f"{eval_model}_stats.json")
-            
+
             mean_eval, std_eval, count = 0.70, 0.10, 10
             if os.path.exists(log_file):
                 try:
-                    with open(log_file, "r") as f:
+                    with open(log_file) as f:
                         stats = json.load(f)
                         mean_eval, std_eval = stats.get("mean", 0.70), stats.get("std", 0.10)
                         count = stats.get("count", 10)
                 except Exception:
                     pass
-            
+
             normalized_z = (avg_score - mean_eval) / std_eval
-            calibrated_score = 0.72 + (normalized_z * 0.10) # scale back to Qwen-equivalent baseline
-            
+            calibrated_score = 0.72 + (normalized_z * 0.10)  # scale back to Qwen-equivalent baseline
+
             new_count = count + 1
             new_mean = mean_eval + (avg_score - mean_eval) / new_count
-            new_variance = ((std_eval ** 2) * count + (avg_score - mean_eval) * (avg_score - new_mean)) / new_count
-            new_std = max(0.01, new_variance ** 0.5)
-            
+            new_variance = ((std_eval**2) * count + (avg_score - mean_eval) * (avg_score - new_mean)) / new_count
+            new_std = max(0.01, new_variance**0.5)
+
             # DO NOT write stats here. We only write if the trace makes it to the end and is accepted!
             proposed_stats = {"mean": new_mean, "std": new_std, "count": new_count, "log_file": log_file}
-                
+
             return calibrated_score, scores, proposed_stats
         except Exception as e:
             logger.error("Evaluator failed: %s", e)
@@ -205,9 +189,7 @@ class QualityFilter:
     def check_consistency(self, trace: dict) -> tuple[bool, float]:
         """Run same query 3 times, compare conclusions."""
         query = trace.get("query", "")
-        original_answer = trace.get("reasoning_trace", {}).get(
-            "answer", ""
-        )
+        original_answer = trace.get("reasoning_trace", {}).get("answer", "")
         answers = [original_answer]
 
         for _ in range(2):
@@ -221,9 +203,7 @@ class QualityFilter:
         similarities = []
         for i in range(len(answers)):
             for j in range(i + 1, len(answers)):
-                sim = SequenceMatcher(
-                    None, answers[i].lower(), answers[j].lower()
-                ).ratio()
+                sim = SequenceMatcher(None, answers[i].lower(), answers[j].lower()).ratio()
                 similarities.append(sim)
 
         avg_sim = sum(similarities) / len(similarities) if similarities else 0
@@ -238,43 +218,39 @@ class QualityFilter:
         max_sim = 0.0
 
         for existing in self._accepted_traces:
-            existing_answer = existing.get(
-                "reasoning_trace", {}
-            ).get("answer", "")
+            existing_answer = existing.get("reasoning_trace", {}).get("answer", "")
             existing_query = existing.get("query", "")
 
-            query_sim = SequenceMatcher(
-                None, new_query.lower(), existing_query.lower()
-            ).ratio()
-            answer_sim = SequenceMatcher(
-                None, new_answer.lower(), existing_answer.lower()
-            ).ratio()
+            query_sim = SequenceMatcher(None, new_query.lower(), existing_query.lower()).ratio()
+            answer_sim = SequenceMatcher(None, new_answer.lower(), existing_answer.lower()).ratio()
 
             combined_sim = (query_sim * 0.4) + (answer_sim * 0.6)
             if combined_sim > max_sim:
                 max_sim = combined_sim
 
-        # Decay novelty constraint iteratively to allow refinement 
+        # Decay novelty constraint iteratively to allow refinement
         adapters_dir = "./acs/models/adapters/"
-        iteration = len([d for d in os.listdir(adapters_dir) if d.startswith("v")]) + 1 if os.path.exists(adapters_dir) else 1
+        iteration = (
+            len([d for d in os.listdir(adapters_dir) if d.startswith("v")]) + 1 if os.path.exists(adapters_dir) else 1
+        )
         target_novelty = max(0.15, 0.30 - (0.05 * (iteration - 1)))
-        
+
         novelty_score = 1.0 - max_sim
         return novelty_score > target_novelty, novelty_score
 
     # ── Non-LLM ALGORITHMIC VALIDATION ──────────────────────
-    
+
     def check_algorithmic_integrity(self, trace: dict) -> tuple[bool, str]:
         """Non-LLM deterministic logic bounding for confidence and structural consistency."""
         reasoning = trace.get("reasoning_trace", {})
         steps = reasoning.get("steps", [])
-        
+
         final_conf = reasoning.get("confidence", 100.0)
         try:
             final_conf = float(final_conf) / 100.0 if float(final_conf) > 1.0 else float(final_conf)
-        except:
+        except Exception:
             final_conf = 1.0
-            
+
         min_step_conf = 1.0
         for s in steps:
             c = s.get("confidence")
@@ -282,13 +258,13 @@ class QualityFilter:
                 try:
                     val = float(c) / 100.0 if float(c) > 1.0 else float(c)
                     min_step_conf = min(min_step_conf, val)
-                except:
+                except Exception:
                     pass
-                    
+
         # Algorithmic invariant: The conclusion cannot logically transcend the weakest link in the chain
         if final_conf > min_step_conf + 0.15:
             return False, f"overconfident_propagation: final={final_conf:.2f}, min_step={min_step_conf:.2f}"
-            
+
         return True, ""
 
     # ── MAIN FILTER PIPELINE ────────────────────────────────
@@ -313,14 +289,12 @@ class QualityFilter:
         else:
             evaluator_avg, scores = eval_result[0], eval_result[1]
             proposed_stats = None
-            
-        details["checks"]["evaluator"] = {
-            "avg_score": evaluator_avg, "scores": scores
-        }
-        
+
+        details["checks"]["evaluator"] = {"avg_score": evaluator_avg, "scores": scores}
+
         # NEW: Hard floor on evaluator average
-        EVALUATOR_FLOOR = 0.60  # Temporary bootstrap for Iteration 1
-        if evaluator_avg < EVALUATOR_FLOOR:
+        evaluator_floor = 0.60  # Temporary bootstrap for Iteration 1
+        if evaluator_avg < evaluator_floor:
             details["rejected_by"] = "evaluator_below_floor"
             self._log_decision(trace_id, False, details)
             return False
@@ -336,17 +310,19 @@ class QualityFilter:
             details["checks"]["algorithmic"] = {"pass": False, "reason": alg_reason}
             self._log_decision(trace_id, False, details)
             return False
-            
+
         details["checks"]["algorithmic"] = {"pass": True}
 
         # Check 4: Novelty Score (Risk 3 Soft Floor Implementation)
         is_novel, novelty_score = self.check_deduplication(trace)
         details["checks"]["novelty"] = {"novel": is_novel, "score": novelty_score}
-        
+
         adapters_dir = "./acs/models/adapters/"
-        iteration = len([d for d in os.listdir(adapters_dir) if d.startswith("v")]) + 1 if os.path.exists(adapters_dir) else 1
+        iteration = (
+            len([d for d in os.listdir(adapters_dir) if d.startswith("v")]) + 1 if os.path.exists(adapters_dir) else 1
+        )
         target_novelty = max(0.15, 0.30 - (0.05 * (iteration - 1)))
-        
+
         # Soft Floor implementation
         if not is_novel and novelty_score > (target_novelty - 0.05):
             # If the trace barely fails novelty, but is exceptionally deep/complex, allow it to pass the floor
@@ -360,7 +336,7 @@ class QualityFilter:
             details["rejected_by"] = "insufficient_novelty"
             self._log_decision(trace_id, False, details)
             return False
-        
+
         # Analyze Trace Difficulty (Verbosity Gaming Protection)
         reasoning = trace.get("reasoning_trace", {})
         steps = reasoning.get("steps", [])
@@ -368,11 +344,11 @@ class QualityFilter:
         branching_factor = len(reasoning.get("decomposition", []))
         difficulty_score = min(1.0, (verified_steps * 0.03) + (branching_factor * 0.07) + 0.15)
         details["checks"]["difficulty"] = {"score": difficulty_score}
-        
+
         # Calculate Weighted Final Core Score (Rewards harder, novel traces)
         final_quality_score = (evaluator_avg * 0.70) + (novelty_score * 0.15) + (difficulty_score * 0.15)
         details["final_quality_score"] = final_quality_score
-        
+
         if final_quality_score < 0.70:  # Baseline threshold
             details["rejected_by"] = "overall_quality_score"
             self._log_decision(trace_id, False, details)
@@ -381,7 +357,7 @@ class QualityFilter:
         # ALL PASSED — accept
         self._log_decision(trace_id, True, details)
         self._accepted_traces.append(trace)
-        
+
         # Write Normalized Z-Score to disk ONLY after full pipeline filter success!
         if proposed_stats and "log_file" in proposed_stats:
             try:
@@ -392,9 +368,7 @@ class QualityFilter:
                 logger.error("Failed to commit stats: %s", e)
 
         # Save to filtered traces
-        filtered_file = os.path.join(
-            self.filtered_dir, "accepted.jsonl"
-        )
+        filtered_file = os.path.join(self.filtered_dir, "accepted.jsonl")
         with open(filtered_file, "a") as f:
             f.write(json.dumps(trace) + "\n")
 
@@ -404,58 +378,55 @@ class QualityFilter:
 
     def check_evaluator_drift(self, mode: str = "weekly") -> dict:
         """Re-evaluate historical accepted traces and compare against original scores.
-        
+
         Args:
             mode: 'weekly' (5 recent traces) or 'monthly' (20 traces from 3+ months ago)
-        
+
         Returns:
             Dict with drift analysis and recommended action.
         """
         n_traces = 5 if mode == "weekly" else 20
-        
+
         # Load evaluator score history
         if not os.path.exists(self.evaluator_log):
             return {"status": "no_data", "message": "No evaluator history available yet."}
-        
+
         scored_entries = []
-        with open(self.evaluator_log, "r") as f:
+        with open(self.evaluator_log) as f:
             for line in f:
                 try:
                     scored_entries.append(json.loads(line))
                 except json.JSONDecodeError:
                     continue
-        
+
         if len(scored_entries) < n_traces:
             return {
                 "status": "insufficient_data",
                 "message": f"Need {n_traces} scored traces, have {len(scored_entries)}.",
             }
-        
+
         # Select traces based on mode
         if mode == "monthly":
             # Use traces from 3+ months ago (oldest available)
             cutoff = datetime.datetime.now() - datetime.timedelta(days=90)
-            old_entries = [
-                e for e in scored_entries
-                if datetime.datetime.fromisoformat(e["timestamp"]) < cutoff
-            ]
+            old_entries = [e for e in scored_entries if datetime.datetime.fromisoformat(e["timestamp"]) < cutoff]
             if len(old_entries) < n_traces:
                 old_entries = scored_entries[:n_traces]  # Fallback to oldest available
             sample = old_entries[:n_traces]
         else:
             # Weekly: use most recent traces
             sample = scored_entries[-n_traces:]
-        
+
         # Find matching accepted traces to re-evaluate
         trace_map = {}
         for entry in sample:
             trace_map[entry.get("trace_id")] = entry.get("scores", {})
-        
+
         # Load accepted traces for re-evaluation
         reeval_traces = []
         filtered_file = os.path.join(self.filtered_dir, "accepted.jsonl")
         if os.path.exists(filtered_file):
-            with open(filtered_file, "r") as f:
+            with open(filtered_file) as f:
                 for line in f:
                     try:
                         t = json.loads(line)
@@ -463,46 +434,48 @@ class QualityFilter:
                             reeval_traces.append(t)
                     except json.JSONDecodeError:
                         continue
-        
+
         if not reeval_traces:
             return {"status": "no_matching_traces", "message": "Cannot find original traces to re-evaluate."}
-        
+
         # Re-evaluate each trace and compare
         score_keys = list(self.THRESHOLDS.keys())
         deltas = []
         per_trace = []
-        
+
         for trace in reeval_traces[:n_traces]:
             tid = trace.get("trace_id", "?")
             original_scores = trace_map.get(tid, {})
-            
+
             try:
                 new_scores = self.core.evaluate_trace(trace)
             except Exception as e:
                 logger.error("Drift re-evaluation failed for %s: %s", tid, e)
                 continue
-            
+
             trace_deltas = {}
             for key in score_keys:
                 orig_val = float(original_scores.get(key, 0))
                 new_val = float(new_scores.get(key, 0))
                 trace_deltas[key] = round(new_val - orig_val, 4)
-            
+
             avg_delta = sum(trace_deltas.values()) / max(1, len(trace_deltas))
             deltas.append(avg_delta)
-            per_trace.append({
-                "trace_id": tid,
-                "avg_delta": round(avg_delta, 4),
-                "per_metric": trace_deltas,
-            })
-        
+            per_trace.append(
+                {
+                    "trace_id": tid,
+                    "avg_delta": round(avg_delta, 4),
+                    "per_metric": trace_deltas,
+                }
+            )
+
         if not deltas:
             return {"status": "evaluation_failed", "message": "All re-evaluations failed."}
-        
+
         overall_drift = sum(deltas) / len(deltas)
         max_drift = max(abs(d) for d in deltas)
         drifted = abs(overall_drift) > 0.10
-        
+
         result = {
             "status": "DRIFT_DETECTED" if drifted else "stable",
             "mode": mode,
@@ -513,7 +486,7 @@ class QualityFilter:
             "per_trace": per_trace,
             "timestamp": datetime.datetime.now().isoformat(),
         }
-        
+
         if drifted:
             result["recommendation"] = (
                 "Evaluator has drifted significantly (>0.1 avg score change). "
@@ -523,17 +496,14 @@ class QualityFilter:
             logger.warning("EVALUATOR DRIFT DETECTED: avg_delta=%.4f", overall_drift)
         else:
             logger.info("Evaluator drift check passed: avg_delta=%.4f", overall_drift)
-        
+
         # Persist drift report
         drift_dir = os.path.join(self.log_dir, "drift_checks")
         os.makedirs(drift_dir, exist_ok=True)
-        report_file = os.path.join(
-            drift_dir,
-            f"drift_{mode}_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.json"
-        )
+        report_file = os.path.join(drift_dir, f"drift_{mode}_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.json")
         with open(report_file, "w") as f:
             json.dump(result, f, indent=2)
-        
+
         return result
 
     # ── HEALTH MONITORING ───────────────────────────────────
@@ -541,11 +511,10 @@ class QualityFilter:
     def acceptance_rate(self) -> dict:
         """Compute acceptance rate from decision log."""
         if not os.path.exists(self.decisions_log):
-            return {"total": 0, "accepted": 0, "rate": 0.0,
-                    "status": "no_data"}
+            return {"total": 0, "accepted": 0, "rate": 0.0, "status": "no_data"}
 
         total, accepted = 0, 0
-        with open(self.decisions_log, "r") as f:
+        with open(self.decisions_log) as f:
             for line in f:
                 try:
                     entry = json.loads(line)

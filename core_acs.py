@@ -2,12 +2,13 @@
 Component 1-13: Core ACS Integration Layer
 Wraps LM Studio (OpenAI-compatible) for structured reasoning.
 """
-import time
-import json
-import uuid
+
 import datetime
+import json
 import logging
-from typing import Optional
+import time
+import uuid
+
 from openai import OpenAI
 
 logger = logging.getLogger("acs.core")
@@ -80,7 +81,7 @@ class CoreACS:
         world_model,
         base_url: str = "http://localhost:1234/v1",
         model_name: str = "openai/gpt-oss-20b",
-        evaluator_model: Optional[str] = None,
+        evaluator_model: str | None = None,
     ):
         self.world_model = world_model
         self.base_url = base_url
@@ -93,7 +94,7 @@ class CoreACS:
         system_prompt: str,
         user_prompt: str,
         temperature: float = 0.7,
-        model: Optional[str] = None,
+        model: str | None = None,
         max_tokens: int = 4096,
     ) -> str:
         """Raw chat completion call to LM Studio."""
@@ -116,21 +117,22 @@ class CoreACS:
     def _parse_json_response(self, raw: str) -> dict:
         """Extract JSON from LLM response reliably, bypassing strict markdown boundaries."""
         import re
+
         text = raw.strip()
         try:
             # Fallback 1: Direct loads
             return json.loads(text)
         except Exception:
             pass
-            
+
         try:
             # Fallback 2: Regex extraction
-            match = re.search(r'\{.*\}', text, re.DOTALL)
+            match = re.search(r"\{.*\}", text, re.DOTALL)
             if match:
                 return json.loads(match.group())
         except Exception:
             pass
-            
+
         # Hard Fallback
         logger.error("JSON parsing critically failed for LLM response.")
         return {
@@ -141,7 +143,7 @@ class CoreACS:
             "verification": "None.",
             "answer": "[Parse Error]",
             "confidence": 0.0,
-            "gaps": ["Formatting"]
+            "gaps": ["Formatting"],
         }
 
     def quick_generate(self, prompt: str) -> str:
@@ -170,47 +172,48 @@ class CoreACS:
             system = REASONING_SYSTEM_PROMPT
             model = self.model_name
 
-        raw = self._call_chat(
-            system, prompt, temperature=temperature, model=model
-        )
+        raw = self._call_chat(system, prompt, temperature=temperature, model=model)
         return self._parse_json_response(raw)
 
     def evaluate_trace(self, trace: dict) -> dict:
         """Call independent evaluator to score a reasoning trace."""
         trace_text = json.dumps(trace.get("reasoning_trace", {}), indent=2)
-        prompt = (
-            f"Evaluate this reasoning trace:\n\n"
-            f"Query: {trace.get('query', '')}\n\n"
-            f"Trace:\n{trace_text}"
-        )
-        return self.call_llm(
-            prompt, temperature=0.1, is_evaluator=True
-        )
+        prompt = f"Evaluate this reasoning trace:\n\nQuery: {trace.get('query', '')}\n\nTrace:\n{trace_text}"
+        return self.call_llm(prompt, temperature=0.1, is_evaluator=True)
 
     def _detect_domain(self, query: str) -> str:
         """Simple keyword-based domain detection."""
         q = query.lower()
         domain_keywords = {
-            "physics": ["physics", "force", "energy", "quantum", "gravity",
-                        "particle", "wave", "relativity", "thermodynamic"],
-            "biology": ["biology", "cell", "dna", "evolution", "protein",
-                        "organism", "gene", "species", "ecosystem"],
-            "history": ["history", "war", "empire", "century", "revolution",
-                        "civilization", "ancient", "medieval"],
-            "technology": ["technology", "computer", "software", "algorithm",
-                           "ai", "machine learning", "programming", "code"],
-            "philosophy": ["philosophy", "ethics", "moral", "consciousness",
-                           "existence", "epistemology", "ontology"],
-            "mathematics": ["math", "equation", "proof", "theorem", "calculus",
-                            "algebra", "geometry", "statistics"],
-            "economics": ["economics", "market", "gdp", "inflation", "trade",
-                          "fiscal", "monetary", "supply", "demand"],
-            "psychology": ["psychology", "behavior", "cognitive", "emotion",
-                           "mental", "perception", "motivation"],
-            "linguistics": ["language", "grammar", "syntax", "semantics",
-                            "phonology", "morphology", "linguistic"],
-            "ethics": ["ethical", "moral dilemma", "rights", "justice",
-                       "fairness", "responsibility"],
+            "physics": [
+                "physics",
+                "force",
+                "energy",
+                "quantum",
+                "gravity",
+                "particle",
+                "wave",
+                "relativity",
+                "thermodynamic",
+            ],
+            "biology": ["biology", "cell", "dna", "evolution", "protein", "organism", "gene", "species", "ecosystem"],
+            "history": ["history", "war", "empire", "century", "revolution", "civilization", "ancient", "medieval"],
+            "technology": [
+                "technology",
+                "computer",
+                "software",
+                "algorithm",
+                "ai",
+                "machine learning",
+                "programming",
+                "code",
+            ],
+            "philosophy": ["philosophy", "ethics", "moral", "consciousness", "existence", "epistemology", "ontology"],
+            "mathematics": ["math", "equation", "proof", "theorem", "calculus", "algebra", "geometry", "statistics"],
+            "economics": ["economics", "market", "gdp", "inflation", "trade", "fiscal", "monetary", "supply", "demand"],
+            "psychology": ["psychology", "behavior", "cognitive", "emotion", "mental", "perception", "motivation"],
+            "linguistics": ["language", "grammar", "syntax", "semantics", "phonology", "morphology", "linguistic"],
+            "ethics": ["ethical", "moral dilemma", "rights", "justice", "fairness", "responsibility"],
         }
         for domain, keywords in domain_keywords.items():
             if any(kw in q for kw in keywords):
@@ -222,8 +225,7 @@ class CoreACS:
         q = query.lower()
         if any(w in q for w in ["why", "cause", "reason"]):
             return "causal"
-        if any(w in q for w in ["what if", "predict", "would happen",
-                                 "will happen"]):
+        if any(w in q for w in ["what if", "predict", "would happen", "will happen"]):
             return "predictive"
         if any(w in q for w in ["compare", "vs", "difference", "versus"]):
             return "comparative"
@@ -240,7 +242,7 @@ class CoreACS:
             # Extract key terms from query for targeted search
             q_words = [w for w in query.split() if len(w) > 3]
             seen_concepts = set()
-            
+
             for term in q_words[:5]:  # Limit to 5 search terms
                 matches = self.world_model.search_nodes(term, limit=3)
                 for match in matches:
@@ -248,25 +250,23 @@ class CoreACS:
                     if concept in seen_concepts:
                         continue
                     seen_concepts.add(concept)
-                    
+
                     found_context.append(
                         f"Concept '{concept}' (Domain: {match.get('domain', '')}): "
                         f"{json.dumps(match.get('properties', {}))}"
                     )
                     # Include outgoing edges for context
                     for _, target, edata in self.world_model.graph.edges(concept, data=True):
-                        found_context.append(
-                            f"  - {edata.get('relation', 'related to')} -> {target}"
-                        )
-                    
+                        found_context.append(f"  - {edata.get('relation', 'related to')} -> {target}")
+
                     if len(seen_concepts) >= 5:  # Hard cap on context nodes
                         break
                 if len(seen_concepts) >= 5:
                     break
-                    
+
         except Exception as e:
             logger.error("World model context retrieval failed: %s", e)
-            
+
         if found_context:
             return "\n\nBackground Knowledge from World Model:\n" + "\n".join(found_context)
         return ""
@@ -285,7 +285,7 @@ class CoreACS:
             )
 
         prompt = f"{query}{depth_instruction}"
-        
+
         # Add RAG context
         wm_context = self._get_context_from_world_model(query)
         if wm_context:
@@ -297,41 +297,43 @@ class CoreACS:
                 logger.info("DEEP mode activated: Executing Inference-Time Scaling (Best-of-3)")
                 best_score = -1.0
                 best_reasoning = None
-                
+
                 for i in range(3):
                     try:
                         candidate = self.call_llm(prompt, temperature=0.8)
                         llm_calls += 1
-                        
+
                         eval_result = self.evaluate_trace({"query": query, "reasoning_trace": candidate})
                         llm_calls += 1
-                        
+
                         v_validity = float(eval_result.get("step_validity", 0.0))
                         v_support = float(eval_result.get("conclusion_support", 0.0))
                         v_decomp = float(eval_result.get("decomposition_quality", 0.0))
                         score = (v_validity + v_support + v_decomp) / 3.0
-                        
+
                         if score > best_score:
                             best_score = score
                             best_reasoning = candidate
                     except Exception as e:
                         logger.error("DEEP path %d failed: %s", i, e)
-                
+
                 if best_reasoning is None:
                     raise Exception("All DEEP reasoning paths failed.")
                 reasoning = best_reasoning
                 logger.info("Selected best trace with score: %.2f", best_score)
-                
+
             else:
                 reasoning = self.call_llm(prompt, temperature=0.7)
                 llm_calls += 1
-                
+
                 # Reflection Loop
                 confidence = reasoning.get("confidence", 0.0)
                 if isinstance(confidence, str):
-                    try: confidence = float(confidence)
-                    except ValueError: confidence = 0.0
-                    
+                    try:
+                        confidence = float(confidence)
+                    except ValueError:
+                        confidence = 0.0
+
                 if confidence < 0.6:
                     logger.info("Confidence %.2f < 0.6. Triggering reflection pass.", confidence)
                     critique = reasoning.get("self_critique", "No critique provided")
@@ -343,7 +345,7 @@ class CoreACS:
                     )
                     if wm_context:
                         reflection_prompt += wm_context
-                        
+
                     reasoning = self.call_llm(reflection_prompt, temperature=0.7)
                     llm_calls += 1
 

@@ -3,10 +3,10 @@ Component 14: Trace Collector
 Captures DEEP and STANDARD mode traces to JSONL (append-only).
 INSTANT and CLARIFY are too shallow — not captured.
 """
+
 import json
-import os
 import logging
-import datetime
+import os
 from collections import Counter
 
 logger = logging.getLogger("acs.trace_collector")
@@ -29,9 +29,7 @@ class TraceCollector:
         """Store a trace if it's from a capturable mode."""
         mode = trace_data.get("cognitive_mode", "")
         if mode not in self.CAPTURABLE_MODES:
-            logger.debug(
-                "Skipping trace in mode %s (not capturable)", mode
-            )
+            logger.debug("Skipping trace in mode %s (not capturable)", mode)
             return False
 
         with open(self.log_file, "a") as f:
@@ -47,7 +45,7 @@ class TraceCollector:
         """Load all raw traces from disk."""
         traces = []
         if os.path.exists(self.log_file):
-            with open(self.log_file, "r") as f:
+            with open(self.log_file) as f:
                 for line in f:
                     try:
                         traces.append(json.loads(line))

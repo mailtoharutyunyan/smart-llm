@@ -2,12 +2,12 @@
 Component 18b: Model Registry — Version tracking, rollback, provenance.
 Keeps last 3 adapters. Base model never modified.
 """
+
+import datetime
 import json
+import logging
 import os
 import shutil
-import logging
-import datetime
-from typing import Optional
 
 logger = logging.getLogger("acs.model_registry")
 
@@ -33,12 +33,10 @@ class ModelRegistry:
     def _load(self):
         """Load registry from disk."""
         if os.path.exists(self.registry_file):
-            with open(self.registry_file, "r") as f:
+            with open(self.registry_file) as f:
                 data = json.load(f)
                 self.versions = data.get("versions", [])
-                self.current_version = data.get(
-                    "current", "v1_base"
-                )
+                self.current_version = data.get("current", "v1_base")
         else:
             self.versions = [
                 {
@@ -67,7 +65,7 @@ class ModelRegistry:
 
     def register_new_model(
         self,
-        dataset_version: Optional[str] = None,
+        dataset_version: str | None = None,
         tier1: float = 0.0,
         tier2: float = 0.0,
     ) -> str:
@@ -103,8 +101,7 @@ class ModelRegistry:
 
         self._prune_old_adapters()
         self._save()
-        logger.info("Promoted %s to active (T1=%.3f, T2=%.3f)",
-                    version, tier1, tier2)
+        logger.info("Promoted %s to active (T1=%.3f, T2=%.3f)", version, tier1, tier2)
 
     def reject(self, version: str, reason: str):
         """Mark a version as rejected."""
@@ -135,10 +132,7 @@ class ModelRegistry:
 
         if found:
             for v in self.versions:
-                if (
-                    v["version"] != target_version
-                    and v["status"] == "active"
-                ):
+                if v["version"] != target_version and v["status"] == "active":
                     v["status"] = "archived"
             self._save()
             logger.info("Rolled back to %s", target_version)
@@ -147,12 +141,7 @@ class ModelRegistry:
     def _prune_old_adapters(self):
         """Keep only last N adapters on disk."""
         adapter_versions = sorted(
-            [
-                v["version"]
-                for v in self.versions
-                if v["status"] in ("active", "archived")
-                and v["version"] != "v1_base"
-            ]
+            [v["version"] for v in self.versions if v["status"] in ("active", "archived") and v["version"] != "v1_base"]
         )
         to_remove = adapter_versions[: -self.MAX_ADAPTERS]
         for ver in to_remove:

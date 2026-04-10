@@ -1,13 +1,13 @@
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
-name = "autonomous-cognitive-system"
+name = "smart-llm"
 version = "3.1.0"
 description = "A local-first pipeline for autonomous RLHF and continuous AI self-improvement."
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.10"
 authors = [
     {name = "Arayik Harutyunyan"}
@@ -17,10 +17,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
@@ -31,6 +27,25 @@ dependencies = [
     "openai>=1.12.0",
     "sympy>=1.12",
     "psutil>=5.9.0",
+]
+
+[tool.setuptools]
+py-modules = [
+    "acs",
+    "acs_mcp_server",
+    "core_acs",
+    "dataset_builder",
+    "evaluation_suite",
+    "evolve",
+    "executive",
+    "generate_traces",
+    "model_registry",
+    "phase_b_builder",
+    "policy",
+    "quality_filter",
+    "trace_collector",
+    "trainer",
+    "world_model",
 ]
 
 [project.optional-dependencies]
@@ -45,9 +60,9 @@ train = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/mailtoharutyunyan/autonomous-cognitive-system"
-Repository = "https://github.com/mailtoharutyunyan/autonomous-cognitive-system"
-Issues = "https://github.com/mailtoharutyunyan/autonomous-cognitive-system/issues"
+Homepage = "https://github.com/mailtoharutyunyan/smart-llm"
+Repository = "https://github.com/mailtoharutyunyan/smart-llm"
+Issues = "https://github.com/mailtoharutyunyan/smart-llm/issues"
 
 [project.scripts]
 acs = "acs:main"

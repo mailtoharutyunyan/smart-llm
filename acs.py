@@ -3,23 +3,23 @@
 ACS V3.1 — Autonomous Cognitive System CLI
 Full integration of all 23 components.
 """
+
 import argparse
 import json
-import sys
-import os
 import logging
+import os
 
-from world_model import WorldModel
-from policy import PolicyLayer
-from executive import ExecutiveController
 from core_acs import CoreACS
-from trace_collector import TraceCollector
-from quality_filter import QualityFilter
 from dataset_builder import DatasetBuilder
-from trainer import Trainer
-from model_registry import ModelRegistry
 from evaluation_suite import EvaluationSuite
+from executive import ExecutiveController
+from model_registry import ModelRegistry
 from phase_b_builder import PhaseBBuilder
+from policy import PolicyLayer
+from quality_filter import QualityFilter
+from trace_collector import TraceCollector
+from trainer import Trainer
+from world_model import WorldModel
 
 # ── Logging ─────────────────────────────────────────────────
 logging.basicConfig(
@@ -60,6 +60,7 @@ def build_stack():
 
 # ── Command handlers ────────────────────────────────────────
 
+
 def cmd_think(args, stack):
     """Run structured reasoning on a query."""
     query = args.query
@@ -83,10 +84,7 @@ def cmd_think(args, stack):
             if reasoning.get("gaps"):
                 print(f"  Gaps: {', '.join(reasoning['gaps'])}")
             print(f"\n{'─' * 60}")
-            print(
-                f"  Trace ID: {result.get('trace_id', '?')} | "
-                f"Latency: {result.get('latency_ms', '?')}ms"
-            )
+            print(f"  Trace ID: {result.get('trace_id', '?')} | Latency: {result.get('latency_ms', '?')}ms")
         else:
             print(result.get("result", "[no result]"))
 
@@ -117,9 +115,7 @@ def cmd_chat(args, stack):
         reasoning = result.get("reasoning_trace", {})
         if reasoning:
             print(f"\n[{mode}] {reasoning.get('answer', '')}")
-            print(
-                f"  (confidence: {reasoning.get('confidence', '?')})\n"
-            )
+            print(f"  (confidence: {reasoning.get('confidence', '?')})\n")
         else:
             print(f"\n[{mode}] {result.get('result', '')}\n")
 
@@ -135,7 +131,7 @@ def cmd_traces(args, stack):
         print(json.dumps(report, indent=2))
 
     elif args.evaluator_drift:
-        mode = "monthly" if getattr(args, 'monthly', False) else "weekly"
+        mode = "monthly" if getattr(args, "monthly", False) else "weekly"
         result = stack["quality_filter"].check_evaluator_drift(mode=mode)
         print(json.dumps(result, indent=2))
         if result.get("drifted"):
@@ -152,7 +148,7 @@ def cmd_dataset(args, stack):
         filtered_file = "./acs/training/filtered_traces/accepted.jsonl"
         traces = []
         if os.path.exists(filtered_file):
-            with open(filtered_file, "r") as f:
+            with open(filtered_file) as f:
                 for line in f:
                     try:
                         traces.append(json.loads(line))
@@ -160,10 +156,7 @@ def cmd_dataset(args, stack):
                         continue
 
         if len(traces) < 500:
-            print(
-                f"WARNING: Only {len(traces)} filtered traces "
-                f"(need 500 minimum). Building anyway for testing."
-            )
+            print(f"WARNING: Only {len(traces)} filtered traces (need 500 minimum). Building anyway for testing.")
 
         dataset = stack["dataset_builder"].build_dataset(traces)
         print(f"Dataset built: {len(dataset)} traces")
@@ -179,15 +172,13 @@ def cmd_dataset(args, stack):
             print("No datasets found.")
             return
         latest = versions[-1]
-        dataset_file = os.path.join(
-            datasets_dir, latest, "dataset.jsonl"
-        )
+        dataset_file = os.path.join(datasets_dir, latest, "dataset.jsonl")
         if not os.path.exists(dataset_file):
             print(f"No dataset file in {latest}")
             return
 
         traces = []
-        with open(dataset_file, "r") as f:
+        with open(dataset_file) as f:
             for line in f:
                 try:
                     traces.append(json.loads(line))
@@ -203,16 +194,11 @@ def cmd_dataset(args, stack):
             print("No datasets found.")
             return
         for ver in sorted(os.listdir(datasets_dir)):
-            report_file = os.path.join(
-                datasets_dir, ver, "diversity_report.json"
-            )
+            report_file = os.path.join(datasets_dir, ver, "diversity_report.json")
             if os.path.exists(report_file):
-                with open(report_file, "r") as f:
+                with open(report_file) as f:
                     report = json.load(f)
-                print(
-                    f"  {ver}: {report.get('total_traces', '?')} traces, "
-                    f"valid={report.get('valid', '?')}"
-                )
+                print(f"  {ver}: {report.get('total_traces', '?')} traces, valid={report.get('valid', '?')}")
             else:
                 print(f"  {ver}: (no report)")
     else:
@@ -225,11 +211,12 @@ def cmd_eval(args, stack):
         current = stack["registry"].get_current()
         print(f"Running full evaluation for {current['version']}...")
         result = stack["evaluator"].run_full(current["version"])
-        print(json.dumps(
-            {k: v for k, v in result.items()
-             if k not in ("tier1_detail", "tier2_detail")},
-            indent=2,
-        ))
+        print(
+            json.dumps(
+                {k: v for k, v in result.items() if k not in ("tier1_detail", "tier2_detail")},
+                indent=2,
+            )
+        )
 
     elif args.plateau_check:
         result = stack["evaluator"].check_plateau()
@@ -237,20 +224,14 @@ def cmd_eval(args, stack):
 
     elif args.compare:
         v1, v2 = args.compare
-        versions = {
-            v["version"]: v
-            for v in stack["registry"].list_versions()
-        }
+        versions = {v["version"]: v for v in stack["registry"].list_versions()}
         if v1 in versions and v2 in versions:
-            print(f"\n  {v1}: Tier1={versions[v1]['tier1']:.4f}, "
-                  f"Tier2={versions[v1]['tier2']:.4f}")
-            print(f"  {v2}: Tier1={versions[v2]['tier1']:.4f}, "
-                  f"Tier2={versions[v2]['tier2']:.4f}")
+            print(f"\n  {v1}: Tier1={versions[v1]['tier1']:.4f}, Tier2={versions[v1]['tier2']:.4f}")
+            print(f"  {v2}: Tier1={versions[v2]['tier1']:.4f}, Tier2={versions[v2]['tier2']:.4f}")
             t2_delta = versions[v2]["tier2"] - versions[v1]["tier2"]
             print(f"\n  Tier2 delta: {t2_delta:+.4f}")
         else:
-            print(f"Version not found. Available: "
-                  f"{list(versions.keys())}")
+            print(f"Version not found. Available: {list(versions.keys())}")
     else:
         print("Use --run, --plateau-check, or --compare V1 V2")
 
@@ -289,12 +270,7 @@ def cmd_model(args, stack):
         for v in stack["registry"].list_versions():
             status = v.get("status", "?")
             marker = " ← ACTIVE" if status == "active" else ""
-            print(
-                f"  {v['version']:10s} | "
-                f"T1={v.get('tier1', 0):.4f} | "
-                f"T2={v.get('tier2', 0):.4f} | "
-                f"{status}{marker}"
-            )
+            print(f"  {v['version']:10s} | T1={v.get('tier1', 0):.4f} | T2={v.get('tier2', 0):.4f} | {status}{marker}")
         print(f"{'─' * 60}")
 
     elif args.current:
@@ -324,30 +300,27 @@ def cmd_phase(args, stack):
         print(json.dumps(plateau, indent=2))
 
     elif args.transition:
-        limit = getattr(args, 'limit', 50)
+        limit = getattr(args, "limit", 50)
         stack["phase_b"].build_knowledge_dataset(limit=limit)
     else:
         print("Use --check or --transition")
 
+
 def cmd_ingest(args, stack):
     """Knowledge Ingestion component."""
-    topic = getattr(args, 'topic', None)
-    limit = getattr(args, 'limit', 1)
+    topic = getattr(args, "topic", None)
+    limit = getattr(args, "limit", 1)
     stack["phase_b"].ingest_wikipedia(args.source, topic=topic, limit=limit)
 
 
 def cmd_executive(args, stack):
     """Executive controller stats."""
     if args.stats:
-        print(json.dumps(
-            stack["executive"].get_stats(), indent=2
-        ))
+        print(json.dumps(stack["executive"].get_stats(), indent=2))
     elif args.log:
         print("Executive log: see ./acs/logs/executive/")
     else:
-        print(json.dumps(
-            stack["executive"].get_stats(), indent=2
-        ))
+        print(json.dumps(stack["executive"].get_stats(), indent=2))
 
 
 def cmd_policy(args, stack):
@@ -360,7 +333,7 @@ def cmd_policy(args, stack):
     elif args.history:
         path = stack["policy"].outcomes_path
         if os.path.exists(path):
-            with open(path, "r") as f:
+            with open(path) as f:
                 lines = f.readlines()
             for line in lines[-20:]:
                 print(line.strip())
@@ -377,7 +350,7 @@ def cmd_filter_pipeline(args, stack):
 
     already_filtered = set()
     if os.path.exists(filtered_file):
-        with open(filtered_file, "r") as f:
+        with open(filtered_file) as f:
             for line in f:
                 try:
                     t = json.loads(line)
@@ -385,10 +358,7 @@ def cmd_filter_pipeline(args, stack):
                 except json.JSONDecodeError:
                     continue
 
-    new_traces = [
-        t for t in raw_traces
-        if t.get("trace_id") not in already_filtered
-    ]
+    new_traces = [t for t in raw_traces if t.get("trace_id") not in already_filtered]
 
     if not new_traces:
         print("No new traces to filter.")
@@ -404,29 +374,24 @@ def cmd_filter_pipeline(args, stack):
 
     rate = stack["quality_filter"].acceptance_rate()
     print(f"\nResults: {accepted} accepted, {rejected} rejected")
-    print(f"Acceptance rate: {rate['rate']*100:.1f}% ({rate['status']})")
+    print(f"Acceptance rate: {rate['rate'] * 100:.1f}% ({rate['status']})")
 
 
 # ── Main ────────────────────────────────────────────────────
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="ACS V3.1 — Autonomous Cognitive System"
-    )
-    subparsers = parser.add_subparsers(
-        dest="command", help="Available commands"
-    )
+    parser = argparse.ArgumentParser(description="ACS V3.1 — Autonomous Cognitive System")
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # Core
-    chat_p = subparsers.add_parser("chat", help="Interactive chat")
+    subparsers.add_parser("chat", help="Interactive chat")
     think_p = subparsers.add_parser("think", help="Structured reasoning")
     think_p.add_argument("query", type=str)
-    think_p.add_argument("--dev", action="store_true",
-                         help="Show full trace JSON")
+    think_p.add_argument("--dev", action="store_true", help="Show full trace JSON")
 
     # Inspection
-    for cmd in ["dreams", "stats", "self", "inspect",
-                "surprised", "gaps"]:
+    for cmd in ["dreams", "stats", "self", "inspect", "surprised", "gaps"]:
         subparsers.add_parser(cmd, help=f"Inspection: {cmd}")
 
     # Executive / Policy
@@ -443,21 +408,19 @@ def main():
     # Evolution Loop
     traces_p = subparsers.add_parser("traces")
     traces_p.add_argument("--stats", action="store_true")
-    traces_p.add_argument("--quality-report", action="store_true",
-                          dest="quality_report")
-    traces_p.add_argument("--evaluator-drift", action="store_true",
-                          dest="evaluator_drift")
-    traces_p.add_argument("--monthly", action="store_true",
-                          help="Use monthly full-audit mode for drift detection (20 traces)")
-    traces_p.add_argument("--filter", action="store_true",
-                          help="Run quality filter on raw traces")
+    traces_p.add_argument("--quality-report", action="store_true", dest="quality_report")
+    traces_p.add_argument("--evaluator-drift", action="store_true", dest="evaluator_drift")
+    traces_p.add_argument(
+        "--monthly", action="store_true", help="Use monthly full-audit mode for drift detection (20 traces)"
+    )
+    traces_p.add_argument("--filter", action="store_true", help="Run quality filter on raw traces")
 
     # Evolution Orchestrator
     evolve_p = subparsers.add_parser("evolve", help="Run full automated evolution loop")
-    evolve_p.add_argument("--dry-run", action="store_true", dest="dry_run",
-                          help="Show plan without executing")
-    evolve_p.add_argument("--skip-filter", action="store_true", dest="skip_filter",
-                          help="Skip filtering, use existing accepted traces")
+    evolve_p.add_argument("--dry-run", action="store_true", dest="dry_run", help="Show plan without executing")
+    evolve_p.add_argument(
+        "--skip-filter", action="store_true", dest="skip_filter", help="Skip filtering, use existing accepted traces"
+    )
 
     dataset_p = subparsers.add_parser("dataset")
     dataset_p.add_argument("--status", action="store_true")
@@ -467,14 +430,12 @@ def main():
     eval_p = subparsers.add_parser("eval")
     eval_p.add_argument("--run", action="store_true")
     eval_p.add_argument("--compare", nargs=2, metavar=("V1", "V2"))
-    eval_p.add_argument("--plateau-check", action="store_true",
-                        dest="plateau_check")
+    eval_p.add_argument("--plateau-check", action="store_true", dest="plateau_check")
 
     train_p = subparsers.add_parser("train")
     train_p.add_argument("--status", action="store_true")
     train_p.add_argument("--trigger", action="store_true")
-    train_p.add_argument("--dry-run", action="store_true",
-                         dest="dry_run")
+    train_p.add_argument("--dry-run", action="store_true", dest="dry_run")
 
     model_p = subparsers.add_parser("model")
     model_p.add_argument("--list", action="store_true")
@@ -508,11 +469,7 @@ def main():
     handlers = {
         "think": cmd_think,
         "chat": cmd_chat,
-        "traces": lambda a, s: (
-            cmd_filter_pipeline(a, s)
-            if getattr(a, "filter", False)
-            else cmd_traces(a, s)
-        ),
+        "traces": lambda a, s: cmd_filter_pipeline(a, s) if getattr(a, "filter", False) else cmd_traces(a, s),
         "dataset": cmd_dataset,
         "eval": cmd_eval,
         "train": cmd_train,
@@ -529,9 +486,10 @@ def main():
     elif args.command == "evolve":
         # Import and run the evolution orchestrator directly
         from evolve import run_evolution
+
         run_evolution(
-            dry_run=getattr(args, 'dry_run', False),
-            skip_filter=getattr(args, 'skip_filter', False),
+            dry_run=getattr(args, "dry_run", False),
+            skip_filter=getattr(args, "skip_filter", False),
         )
     else:
         print(f"\n[STUB] Command '{args.command}' is mapped but the handler is scheduled for development in Phase B.")

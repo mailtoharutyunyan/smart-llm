@@ -85,7 +85,7 @@ The pipeline flows through five major stages in a continuous feedback loop. Each
 ## Project Structure
 
 ```
-autonomous-cognitive-system/
+smart-llm/
 ├── acs.py                  # CLI entrypoint — routes all commands
 ├── core_acs.py             # Cognitive kernel — LLM interface, DEEP reasoning
 ├── executive.py            # Query router — classifies complexity
@@ -130,8 +130,8 @@ autonomous-cognitive-system/
 
 ```bash
 # 1. Clone the repository
-git clone git@github.com:mailtoharutyunyan/autonomous-cognitive-system.git
-cd autonomous-cognitive-system
+git clone git@github.com:mailtoharutyunyan/smart-llm.git
+cd smart-llm
 
 # 2. Create and activate virtual environment
 python3 -m venv venv

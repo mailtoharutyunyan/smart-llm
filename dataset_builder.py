@@ -2,20 +2,20 @@
 Component 16: Dataset Builder — V3.1 Anti-overfitting measures.
 All 5 measures implemented + dataset validation gate.
 """
+
+import datetime
 import json
+import logging
 import os
 import random
-import logging
-import datetime
 from collections import Counter
-from typing import Optional
 
 logger = logging.getLogger("acs.dataset_builder")
 
 # Target distributions from spec
 DOMAIN_CAP = 0.20
 STEP_COUNT_TARGETS = {
-    "short": (3, 4, 0.30),   # (min, max, target_pct)
+    "short": (3, 4, 0.30),  # (min, max, target_pct)
     "medium": (5, 7, 0.50),
     "long": (8, 10, 0.20),
 }
@@ -72,54 +72,55 @@ class DatasetBuilder:
         Only shuffles sibling sub-tasks, preserving logical continuity."""
         # Measure 1: Shuffle reasoning order (30%)
         # Increase the sample size because some traces naturally don't have enough decomposition complexity to shuffle
-        n = int(len(traces) * 0.45) 
+        n = int(len(traces) * 0.45)
         indices = random.sample(range(len(traces)), min(n, len(traces)))
 
         for idx in indices:
             trace = traces[idx]
             reasoning = trace.get("reasoning_trace", {})
             decomposition = reasoning.get("decomposition", [])
-            
+
             if len(decomposition) > 1:
                 deps = {}
                 import re
+
                 for i, d in enumerate(decomposition):
                     d_lower = d.lower()
                     deps[i] = deps.get(i, set())
-                    for j in range(i+1, len(decomposition)):
+                    for j in range(i + 1, len(decomposition)):
                         target = decomposition[j].lower()
                         is_dependent = False
-                        
+
                         # 1. Explicit Ordinal Check
-                        if re.search(fr'\bstep\s*0*{i+1}\b', target):
+                        if re.search(rf"\bstep\s*0*{i + 1}\b", target):
                             is_dependent = True
                         else:
                             # 2. Strict Semantic Noun-Overlap
-                            words_i = set(re.findall(r'\b[a-z]{6,}\b', d_lower))
-                            words_j = set(re.findall(r'\b[a-z]{6,}\b', target))
+                            words_i = set(re.findall(r"\b[a-z]{6,}\b", d_lower))
+                            words_j = set(re.findall(r"\b[a-z]{6,}\b", target))
                             if len(words_i & words_j) >= 2:
                                 is_dependent = True
-                                
+
                         if is_dependent:
                             deps[j] = deps.get(j, set()) | {i}
-                
+
                 # Topological leveling
                 levels = {}
                 for i in range(len(decomposition)):
                     lvl = max([levels.get(parent, 0) for parent in deps.get(i, set())], default=-1) + 1
                     levels[i] = lvl
-                
+
                 # Only validly random-shuffle independent siblings within the same level
                 by_level = {}
                 for i, lvl in levels.items():
                     by_level.setdefault(lvl, []).append(decomposition[i])
-                
+
                 new_decomp = []
                 for lvl in sorted(by_level.keys()):
                     level_items = by_level[lvl]
                     random.shuffle(level_items)
                     new_decomp.extend(level_items)
-                
+
                 reasoning["decomposition"] = new_decomp
                 trace["shuffled"] = True
 
@@ -129,9 +130,7 @@ class DatasetBuilder:
 
     # ── MEASURE 2: Noise injection (20%) ────────────────────
 
-    def _apply_noise_injection(
-        self, traces: list[dict]
-    ) -> list[dict]:
+    def _apply_noise_injection(self, traces: list[dict]) -> list[dict]:
         """Inject deliberate error + correction in 20% of traces."""
         n = int(len(traces) * 0.25)
         indices = random.sample(range(len(traces)), min(n, len(traces)))
@@ -149,9 +148,7 @@ class DatasetBuilder:
                 # Insert corruption + correction pair
                 error_step = {
                     "step": f"{original_step.get('step', '?')}_error",
-                    "thought": (
-                        f"Assume {original_step.get('thought', '')}"
-                    ),
+                    "thought": (f"Assume {original_step.get('thought', '')}"),
                     "result": "[WAIT, CONTRADICTION FOUND]",
                 }
                 correction_step = {
@@ -167,20 +164,13 @@ class DatasetBuilder:
                 reasoning["steps"] = steps
                 trace["type"] = "error_correction_trace"
 
-        ec_count = sum(
-            1 for t in traces
-            if t.get("type") == "error_correction_trace"
-        )
-        logger.info(
-            "Noise injected in %d/%d traces", ec_count, len(traces)
-        )
+        ec_count = sum(1 for t in traces if t.get("type") == "error_correction_trace")
+        logger.info("Noise injected in %d/%d traces", ec_count, len(traces))
         return traces
 
     # ── MEASURE 3: Hard domain balance (max 20%) ────────────
 
-    def _apply_domain_balance(
-        self, traces: list[dict]
-    ) -> list[dict]:
+    def _apply_domain_balance(self, traces: list[dict]) -> list[dict]:
         """Enforce max 20% from any single domain."""
         max_per_domain = int(len(traces) * DOMAIN_CAP)
         if max_per_domain < 1:
@@ -208,32 +198,30 @@ class DatasetBuilder:
         return balanced
 
     # ── MEASURE 7: Trace Compression (Centroid Extraction) ──
-        
+
     def _apply_trace_compression(self, dataset: list[dict]) -> list[dict]:
         """Eradicate LoRA saturation by compressing redundant structural styles into centroids."""
         clusters = {}
         for trace in dataset:
             sig = self._extract_style_signature(trace)
             clusters.setdefault(sig, []).append(trace)
-            
+
         compressed = []
-        for sig, traces in clusters.items():
-            if len(traces) > 20: # Start culling beyond 20 structurally identical traces
+        for _sig, traces in clusters.items():
+            if len(traces) > 20:  # Start culling beyond 20 structurally identical traces
                 # Heuristic centroid targeting (trace closest to mean step_count)
                 avg_steps = sum(self._count_steps(t) for t in traces) / len(traces)
                 traces.sort(key=lambda t: abs(self._count_steps(t) - avg_steps))
-                compressed.extend(traces[:max(20, int(len(traces) * 0.5))])
+                compressed.extend(traces[: max(20, int(len(traces) * 0.5))])
             else:
                 compressed.extend(traces)
-                
+
         logger.info("Trace Compression: %d raw -> %d compressed centroids.", len(dataset), len(compressed))
         return compressed
 
     # ── BUILD PIPELINE ──────────────────────────────────────
 
-    def build_dataset(
-        self, traces: list[dict], version: Optional[str] = None
-    ) -> tuple[list[dict], list[dict]]:
+    def build_dataset(self, traces: list[dict], version: str | None = None) -> tuple[list[dict], list[dict]]:
         """Apply all anti-overfitting measures and return (train, eval)."""
         if not traces:
             logger.warning("No traces provided to build dataset.")
@@ -266,7 +254,7 @@ class DatasetBuilder:
         with open(train_file, "w") as f:
             for t in train_dataset:
                 f.write(json.dumps(t) + "\n")
-                
+
         eval_file = os.path.join(ver_dir, "eval_dataset.jsonl")
         with open(eval_file, "w") as f:
             for t in eval_dataset:
@@ -281,7 +269,10 @@ class DatasetBuilder:
 
         logger.info(
             "Dataset v%s built: %d train traces, %d eval traces, saved to %s",
-            ver, len(train_dataset), len(eval_dataset), ver_dir,
+            ver,
+            len(train_dataset),
+            len(eval_dataset),
+            ver_dir,
         )
         return train_dataset, eval_dataset
 
@@ -294,37 +285,20 @@ class DatasetBuilder:
             return {"valid": False, "reason": "empty dataset"}
 
         # Domain distribution
-        domain_counts = Counter(
-            t.get("domain", "general") for t in dataset
-        )
-        domain_pcts = {
-            d: round(c / total, 4) for d, c in domain_counts.items()
-        }
+        domain_counts = Counter(t.get("domain", "general") for t in dataset)
+        domain_pcts = {d: round(c / total, 4) for d, c in domain_counts.items()}
         domain_ok = all(p <= DOMAIN_CAP + 0.02 for p in domain_pcts.values())
 
         # Step count distribution
-        step_categories = Counter(
-            self._classify_step_count(self._count_steps(t))
-            for t in dataset
-        )
-        step_pcts = {
-            k: round(step_categories.get(k, 0) / total, 4)
-            for k in ["short", "medium", "long"]
-        }
+        step_categories = Counter(self._classify_step_count(self._count_steps(t)) for t in dataset)
+        step_pcts = {k: round(step_categories.get(k, 0) / total, 4) for k in ["short", "medium", "long"]}
 
         # Question type distribution
-        qtype_counts = Counter(
-            t.get("question_type", "explanatory") for t in dataset
-        )
-        qtype_pcts = {
-            q: round(c / total, 4) for q, c in qtype_counts.items()
-        }
+        qtype_counts = Counter(t.get("question_type", "explanatory") for t in dataset)
+        qtype_pcts = {q: round(c / total, 4) for q, c in qtype_counts.items()}
 
         # Error correction traces
-        ec_count = sum(
-            1 for t in dataset
-            if t.get("type") == "error_correction_trace"
-        )
+        ec_count = sum(1 for t in dataset if t.get("type") == "error_correction_trace")
         ec_pct = round(ec_count / total, 4)
         ec_ok = ec_pct >= 0.15
 
